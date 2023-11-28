@@ -1,10 +1,10 @@
+import numpy as np
 from turtle import forward
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import numpy as np
-# from transformer import Net
+#from transformer import Net
 import ipdb
 from transformers import BertTokenizer, BertTokenizerFast
 import os

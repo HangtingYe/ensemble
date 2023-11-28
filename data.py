@@ -37,13 +37,16 @@ def load(dataname, info, normalization, ratio):
 
     if ratio == 1.0:
         selected_rows = np.arange(train_size)
+        val_selected_row = np.arange(val_size)
     else:
         selected_rows = np.random.choice(train_size, int(train_size * ratio), replace=False)
+        val_selected_row = np.random.choice(val_size, int(val_size * ratio), replace=False)
     train_size = int(train_size * ratio)
-
+    val_size = int(val_size * ratio)
     ## numerical features
     N_train, N_val, N_test = np.load(f'./data/{dataname}/N_train.npy', allow_pickle=True), np.load(f'./data/{dataname}/N_val.npy', allow_pickle=True), np.load(f'./data/{dataname}/N_test.npy', allow_pickle=True)
     N_train = N_train[selected_rows, :]
+    N_val = N_val[val_selected_row, :]
 
     N = np.concatenate([N_train, N_val, N_test], axis=0).astype('float32')
     ### it has nan input for higgs_small
@@ -65,6 +68,7 @@ def load(dataname, info, normalization, ratio):
     if n_cat_features != 0:
         C_train, C_val, C_test = np.load(f'./data/{dataname}/C_train.npy', allow_pickle=True), np.load(f'./data/{dataname}/C_val.npy', allow_pickle=True), np.load(f'./data/{dataname}/C_test.npy', allow_pickle=True)
         C_train = C_train[selected_rows, :]
+        C_val = C_val[val_selected_row, :]
 
         C = np.concatenate([C_train, C_val, C_test], axis=0)
         # ### catergorical feature one label encoding
@@ -100,7 +104,7 @@ def load(dataname, info, normalization, ratio):
         # else:
         #     None
 
-        C = [sklearn.preprocessing.LabelEncoder().fit_transform(C[:,i].reshape(-1,1)).astype('int64').reshape(-1,1) for i in range(C.shape[1])]
+        C = [sklearn.preprocessing.LabelEncoder().fit_transform(C[:,i]).astype('int64').reshape(-1,1) for i in range(C.shape[1])]
         C = np.concatenate(C, axis=1)
 
     else:
@@ -110,6 +114,7 @@ def load(dataname, info, normalization, ratio):
     ## label
     y_train, y_val, y_test = np.load(f'./data/{dataname}/y_train.npy', allow_pickle=True), np.load(f'./data/{dataname}/y_val.npy', allow_pickle=True), np.load(f'./data/{dataname}/y_test.npy', allow_pickle=True)
     y_train = y_train[selected_rows]
+    y_val = y_val[val_selected_row]
     
     Y = np.concatenate([y_train, y_val, y_test], axis=0)
     ### regression

@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 import torch.optim as optim
@@ -6,7 +7,6 @@ import torch.nn as nn
 from data import load
 from models import Model
 import random
-import numpy as np
 from scipy.optimize import linear_sum_assignment
 import json
 import ipdb
@@ -127,7 +127,8 @@ def test(encoder, head, test_loader, task_type, y_std, args, config):
 
     print(f'test result, {score.item()}')
 
-    np.save(open(f'./results/{args.dataname}_{args.model_type}_{args.pretrain}_{args.apply_kmeans}_{task_ids}_{args.hyper}_{args.seed}.npy','wb'), score.item())
+    task_ids = ast.literal_eval(args.task_ids)
+    np.save(open(f'./results/{args.dataname}_{args.model_type}_{args.pretrain}_{args.apply_kmeans}_{args.task_classes}_{task_ids}_{args.hyper}_{args.seed}.npy','wb'), score.item())
 
     # np.save(open(f'./results/{args.dataname}_{args.pretrain}_{args.norm_type}.npy','wb'), score.item())
     # torch.save(model.state_dict(), f'./results/{args.dataname}_{args.pretrain}_{args.norm_type}_model.pth')
@@ -277,7 +278,7 @@ def run_one_epoch_ssl(encoder, heads, ssl_dataloaders, optimizer=None):
 
     return running_loss / len(_loaders)
 
-def fit_ssl(encoder, heads, ssl_dataloaders):
+def fit_ssl(encoder, heads, ssl_dataloaders, config):
     best_val_loss = 1e30
     best_encoder = None
     best_heads = None
@@ -380,7 +381,7 @@ if __name__ == '__main__':
     
     ## pretrain
     if args.pretrain == 'True':
-        encoder = fit_ssl(encoder, heads, ssl_dataloaders)
+        encoder = fit_ssl(encoder, heads, ssl_dataloaders,config)
     else:
         None
 
