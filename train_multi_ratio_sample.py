@@ -26,81 +26,17 @@ import copy
 #import ot
 import ast
 
-def build_data_loader(dataset, batch_size=128, shuffle=False):
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-    return data_loader
+from train import *
 
-def get_loss_function(task_type):
-    if task_type == 'regression': 
-        loss_func = F.mse_loss
-    elif task_type == 'binclass':
-        loss_func = F.binary_cross_entropy_with_logits
-    elif task_type == 'multiclass':
-        loss_func = F.cross_entropy
-    return loss_func
-
-def run_one_epoch(encoder, head, data_loader, loss_func, optimizer=None):
-   
-    running_loss = 0.0
-
-    for bid, (X_n, X_c, y) in enumerate(data_loader):
-        
-        pred = head(encoder(X_n, X_c))
-
-        if loss_func == F.cross_entropy:
-            loss = loss_func(pred, y)
-        else:
-            loss = loss_func(pred, y.reshape(-1,1))
-
-        running_loss += loss.item()
-
-        if optimizer is not None:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-    return running_loss / len(data_loader)
-    
-def fit(encoder, head, train_loader, val_loader, loss_func, model_type, config, task_type, y_std, args):
-    best_val_loss = 1e30
-    best_encoder = None
-    best_head = None
-
-    optimizer = optim.AdamW(list(encoder.parameters())+list(head.parameters()), lr=config['training']['lr'], weight_decay=config['training']['weight_decay'])
-
-    early_stop = config['training']['patience']
-    epochs = config['training']['n_epochs']
-
-    patience = early_stop
-
-    for eid in range(epochs):
-        encoder.train()
-        head.train()
-        train_loss = run_one_epoch(
-            encoder, head, train_loader, loss_func, optimizer
-        )
-
-        encoder.eval()
-        head.eval()
-        val_loss = run_one_epoch(
-            encoder, head, val_loader, loss_func
-        )
-
-        print(f'Epoch {eid}, train loss {train_loss}, val loss {val_loss}')
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_encoder = copy.deepcopy(encoder)
-            best_head = copy.deepcopy(head)
-            patience = early_stop
-        else:
-            patience = patience - 1
-
-        if patience == 0:
-            break
-    return best_encoder, best_head
-
-def test(encoder, head, test_loader, task_type, y_std, args, config):
+def _set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark=False
+    torch.backends.cudnn.deterministic = True
+    os.environ['PYTHONHASHSEED'] = str(seed)
+def test_multi_ratios(encoder, head, test_loader, task_type, y_std, args, config):
     
     encoder.eval()
     head.eval()
@@ -126,204 +62,11 @@ def test(encoder, head, test_loader, task_type, y_std, args, config):
         score = sklearn.metrics.mean_squared_error(y.reshape(-1,1), pred.reshape(-1,1)) ** 0.5 * y_std
 
     print(f'test result, {score.item()}')
-
+    task_ids = ast.literal_eval(args.task_ids)
     np.save(open(f'./results/{args.dataname}_{args.model_type}_{args.pretrain}_{args.apply_kmeans}_{args.task_classes}_{task_ids}_{args.hyper}_{args.seed}_{args.ratios}.npy','wb'), score.item())
 
     # np.save(open(f'./results/{args.dataname}_{args.pretrain}_{args.norm_type}.npy','wb'), score.item())
     # torch.save(model.state_dict(), f'./results/{args.dataname}_{args.pretrain}_{args.norm_type}_model.pth')
-
-def save_in_out(model, X, y, model_type, num):
-    X_train, y_train = X['train'], y['train']
-    X_val, y_val = X['val'], y['val']
-    X_test, y_test = X['test'], y['test']
-    pred_train = model(X_train)
-    pred_val = model(X_val)
-    pred_test = model(X_test)
-    result = {'X_train':X_train, 'y_train':y_train, 'pred_train':pred_train, 'X_val':X_val, 'y_val':y_val, 'pred_val':pred_val,'X_test':X_test, 'y_test':y_test, 'pred_test':pred_test}
-    np.save(open(f'./results_visual/{dataname}_{em_type}_{model_type}_{num}_result_visual.npy','wb'), result)
-
-
-def generate_per_task(task_id, num_list, cat_list, X, categories):
-    # !!! not X_ = X.copy(), dict of tensors must use clone() to copy each items, directly copy dict() still can lead to change X_ will change X, a view of level form up to down
-    X_ = {k: v.clone() for k, v in X.items()}
-    y_ = {k: v[:, task_id].clone() for k, v in X.items()}
-
-    if task_id in cat_list:
-        if int(max(torch.cat([y_['train'], y_['val'], y_['test']]))) > 1:
-            task_classes = int(max(torch.cat([y_['train'], y_['val'], y_['test']]))) + 1
-            y_ = {k: v.long() for k, v in y_.items()}
-            task_type = 'multiclass'
-        else:
-            task_classes = 1
-            y_ = {k: v.float() for k, v in y_.items()}
-            task_type = 'binclass'
-    elif task_id in num_list:
-        task_classes = 1
-        y_ = {k: v.float() for k, v in y_.items()}
-        task_type = 'regression'
-
-    for k, v in X_.items():
-        if task_id in cat_list:
-            # v[:, task_id] = v[:, task_id] - v[:, task_id] + sum(categories)
-            v[:, task_id] = v[:, task_id] - v[:, task_id] + categories[task_id-len(num_list)]-1
-        elif task_id in num_list:
-            v[:, task_id] = v[:, task_id] - v[:, task_id]
-
-    return X_, y_, task_type, task_classes
-
-
-def generate_tasks(task_ids, num_list, cat_list, X, categories, info, config, args):
-    n_num_features, n_cat_features = info.get('n_num_features'), info.get('n_cat_features')
-    _train, _val, task_types, task_classess = [], [], [], []
-    for task_id in task_ids:
-        X_, y_, task_type, task_classes = generate_per_task(task_id, num_list, cat_list, X, categories)
-        _train.append(X_['train'][:,:n_num_features])
-        _train.append(X_['train'][:,n_num_features:] if n_cat_features>0 else torch.empty(X_['train'].shape[0], X_['train'].shape[1]).cuda())
-        _train.append(y_['train'])
-        _val.append(X_['val'][:,:n_num_features])
-        _val.append(X_['val'][:,n_num_features:] if n_cat_features>0 else torch.empty(X_['val'].shape[0], X_['val'].shape[1]).cuda())
-        _val.append(y_['val'])
-        task_types.append(task_type)
-        task_classess.append(task_classes)
-    # for unlimited feature lists, i.e. the length of X_train is unsure
-    _train, _val = TensorDataset(*_train), TensorDataset(*_val)
-    _trainloader, _valloader = build_data_loader(_train, config['training']['batch_size'], False), build_data_loader(_val, config['training']['batch_size'], False)
-    dataloaders = {'_train':_trainloader, '_val':_valloader, 'task_types':task_types, 'task_classess':task_classess}
-    return dataloaders
-
-
-def generate_merge_task(task_ids, num_list, cat_list, X, categories, info, config, args):
-    # !!! not X_ = X.copy(), dict of tensors must use clone() to copy each items, directly copy dict() still can lead to change X_ will change X, a view of level form up to down
-    X_ = {k: v.clone() for k, v in X.items()}
-    y_ = {k: v[:, task_ids].clone() for k, v in X.items()}
-
-    for k, v in X_.items():
-        for task_id in task_ids:
-            if task_id in cat_list:
-                # v[:, task_id] = v[:, task_id] - v[:, task_id] + sum(categories)
-                v[:, task_id] = v[:, task_id] - v[:, task_id] + categories[task_id-len(num_list)]-1
-            elif task_id in num_list:
-                v[:, task_id] = v[:, task_id] - v[:, task_id]
-
-    task_type = 'multiclass'
-
-    y_merge = torch.cat([y_['train'], y_['val']], dim=0).data.cpu().numpy()
-    kmeans = KMeans(n_clusters=args.task_classes)
-    kmeans.fit(y_merge)
-    y_merge = kmeans.labels_.astype('int64')
-    
-    y_merge = torch.tensor(y_merge).cuda()
-    y_['train'] = y_merge[:y_['train'].shape[0]]
-    y_['val'] = y_merge[y_['train'].shape[0]:]
-
-    return X_, y_, task_type
-
-def generate_tasks_merge(task_ids, num_list, cat_list, X, categories, info, config, args):
-    n_num_features, n_cat_features = info.get('n_num_features'), info.get('n_cat_features')
-    _train, _val, task_types, task_classess = [], [], [], []
-    X_, y_, task_type = generate_merge_task(task_ids, num_list, cat_list, X, categories, info, config, args)
-
-    _train.append(X_['train'][:,:n_num_features])
-    _train.append(X_['train'][:,n_num_features:] if n_cat_features>0 else torch.empty(X_['train'].shape[0], X_['train'].shape[1]).cuda())
-    _train.append(y_['train'])
-
-    _val.append(X_['val'][:,:n_num_features])
-    _val.append(X_['val'][:,n_num_features:] if n_cat_features>0 else torch.empty(X_['val'].shape[0], X_['val'].shape[1]).cuda())
-    _val.append(y_['val'])
-
-    task_types.append(task_type)
-    task_classess.append(args.task_classes)
-
-    # for unlimited feature lists, i.e. the length of X_train is unsure
-    _train, _val = TensorDataset(*_train), TensorDataset(*_val)
-    _trainloader, _valloader = build_data_loader(_train, config['training']['batch_size'], False), build_data_loader(_val, config['training']['batch_size'], False)
-    dataloaders = {'_train':_trainloader, '_val':_valloader, 'task_types':task_types, 'task_classess':task_classess}
-    return dataloaders
-
-
-def run_one_epoch_ssl(encoder, heads, ssl_dataloaders, optimizer=None):
-    running_loss = 0.0
-
-    if optimizer is not None:
-        _loaders = ssl_dataloaders['_train']
-    else:
-        _loaders = ssl_dataloaders['_val']
-
-    task_types = ssl_dataloaders['task_types']
-
-    # for batch, each batch contains n subtasks  
-    for bid, _all in enumerate(_loaders):
-        # traverse each subtask
-        loss = 0.0
-        for i in range(len(task_types)):
-            X_n, X_c, y = _all[i*3], _all[i*3+1], _all[i*3+2]
-            head = heads[i]
-            task_type = task_types[i]
-
-            pred = head(encoder(X_n, X_c))
-            loss_func = get_loss_function(task_type)
-            # equally weight
-            if loss_func == F.cross_entropy:
-                loss += loss_func(pred, y)
-            else:
-                loss += loss_func(pred, y.reshape(-1,1))
-
-        running_loss += loss.item()
-
-        if optimizer is not None:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-    return running_loss / len(_loaders)
-
-def fit_ssl(encoder, heads, ssl_dataloaders):
-    best_val_loss = 1e30
-    best_encoder = None
-    best_heads = None
-    # combine encoder and heads to one module
-    optimizer = optim.AdamW(list(encoder.parameters())+list(heads.parameters()), lr=config['training']['lr'], weight_decay=config['training']['weight_decay'])
-
-    early_stop = config['training']['patience']
-    epochs = config['training']['n_epochs']
-
-    patience = early_stop
-
-    for eid in range(epochs):
-        encoder.train()
-        heads.train()
-        train_loss = run_one_epoch_ssl(encoder, heads, ssl_dataloaders, optimizer)
-
-        encoder.eval()
-        heads.eval()
-        val_loss = run_one_epoch_ssl(encoder, heads, ssl_dataloaders)
-
-        print(f'Epoch {eid}, train loss {train_loss}, val loss {val_loss}')
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            # best_encoder = encoder
-            # best_heads = heads
-            best_encoder = copy.deepcopy(encoder)
-            best_heads = copy.deepcopy(heads)
-            patience = early_stop
-        else:
-            patience = patience - 1
-
-        if patience == 0:
-            break
-    return best_encoder
-
-
-def _set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark=False
-    torch.backends.cudnn.deterministic = True
-    os.environ['PYTHONHASHSEED'] = str(seed)
-
 if __name__ == '__main__':
 
     ## add hyperparameters
@@ -401,8 +144,8 @@ if __name__ == '__main__':
     ## pretrain
     if args.pretrain == 'True':
         for sub_sample_heads, sub_ssl_dataloaders in zip(all_sub_sample_heads, all_sub_ssl_dataloaders):
-            encoder = fit_ssl(encoder, sub_sample_heads, sub_ssl_dataloaders)
-        encoder = fit_ssl(encoder, heads, full_ssl_dataloaders)
+            encoder = fit_ssl(encoder, sub_sample_heads, sub_ssl_dataloaders, config)
+        encoder = fit_ssl(encoder, heads, full_ssl_dataloaders, config)
     else:
         None
 # ------------------------
@@ -417,7 +160,7 @@ if __name__ == '__main__':
     best_encoder, best_head = fit(encoder, head_final, train_loader, val_loader, loss_func, args.model_type, config, task_type, y_std, args)
     # model.load_state_dict(torch.load(f'./results/{dataname}_{em_type}_{model_type}_{num}_model.pth'))
 
-    test(best_encoder, best_head, test_loader, task_type, y_std, args, config)
+    test_multi_ratios(best_encoder, best_head, test_loader, task_type, y_std, args, config)
     # save_in_out(model, X, y, model_type, num)
 
 
