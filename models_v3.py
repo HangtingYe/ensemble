@@ -80,7 +80,7 @@ class Model(nn.Module):
             if self.args.apply_attribute == 'True':
                 # r = estimator_head(estimator_encoder(inputs_n, inputs_c))
                 self.estimator_encoder = copy.deepcopy(self.encoder)
-                # y = head_phase1(r*topics)
+                # y = head_estimator(r*topics)
                 self.head_estimator = copy.deepcopy(self.head)
                 _set_seed(seed)
                 self.estimator_head = nn.Linear(self.config['model']['d_layers'][-1], self.topic_num)
@@ -97,7 +97,7 @@ class Model(nn.Module):
             if self.args.apply_attribute == 'True':
                 # r = estimator_head(estimator_encoder(inputs_n, inputs_c))
                 self.estimator_encoder = copy.deepcopy(self.encoder)
-                # y = head_phase1(r*topics)
+                # y = head_estimator(r*topics)
                 self.head_estimator = copy.deepcopy(self.head)
                 _set_seed(seed)
                 self.estimator_head = nn.Linear(self.config['model']['d_layers'][-1], self.topic_num)
@@ -114,7 +114,7 @@ class Model(nn.Module):
             if self.args.apply_attribute == 'True':
                 # r = estimator_head(estimator_encoder(inputs_n, inputs_c))
                 self.estimator_encoder = copy.deepcopy(self.encoder)
-                # y = head_phase1(r*topics)
+                # y = head_estimator(r*topics)
                 self.head_estimator = copy.deepcopy(self.head)
 
                 _set_seed(seed)
@@ -133,7 +133,7 @@ class Model(nn.Module):
             if self.args.apply_attribute == 'True':
                 # r = estimator_head(estimator_encoder(inputs_n, inputs_c))
                 self.estimator_encoder = copy.deepcopy(self.encoder)
-                # y = head_phase1(r*topics)
+                # y = head_estimator(r*topics)
                 self.head_estimator = copy.deepcopy(self.head)
 
                 _set_seed(seed)
@@ -151,7 +151,7 @@ class Model(nn.Module):
             if self.args.apply_attribute == 'True':
                 # r = estimator_head(estimator_encoder(inputs_n, inputs_c))
                 self.estimator_encoder = copy.deepcopy(self.encoder)
-                # y = head_phase1(r*topics)
+                # y = head_estimator(r*topics)
                 self.head_estimator = copy.deepcopy(self.head)
 
                 _set_seed(seed)
@@ -171,7 +171,7 @@ class Model(nn.Module):
             if self.args.apply_attribute == 'True':
                 # r = estimator_head(estimator_encoder(inputs_n, inputs_c))
                 self.estimator_encoder = copy.deepcopy(self.encoder)
-                 # y = head_phase1(r*topics)
+                 # y = head_estimator(r*topics)
                 self.head_estimator = copy.deepcopy(self.head)
 
                 _set_seed(seed)
